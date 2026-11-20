@@ -1,27 +1,37 @@
 # Project Specifications
 ## Terminology
-1. The "perfect" player (PB&J) is given a random "golden" alpha value
-2. The "training" player (Peter) is given a beta value
-3. Learning rate TBD 
+1. The "perfect" player (PB&J) plays Player 2's fixed equilibrium strategy, controlled by a single value `q` (default 1/3)
+2. The "training" player (Peter) is Player 1 and is given four probabilities to converge on: `bet_J`, `bet_Q`, `bet_K` (chance of betting with each card) and `call_Q` (chance of calling a bet after checking with Q)
+3. The check probabilities are just the complements, e.g. check with `J = 1 - bet_J`. The `1-alpha` and `alpha` branches in the game tree are probabilities we converge on
+4. Learning rate `lr` is the step size of each hill climbing move. Currently `0.005`
 
 ## Axioms
 1. Peter is always the first player
+2. Peter only sees his own card, so his strategy depends only on that card
+3. Alpha is a range of optimal values
 
 ## Process
-1. After each N iterations where max(N) is TBD, calculate the Mean Squared Error (MSE)
-2. Based on the MSE, shift beta by the learning rate in a certain direction
-3. Keep iterating 1,2 until MSE ~stops shifting
-4. Compare beta to alpha; compare EV on M simulations where M is TBD to -1/18
+1. Start Peter's four probabilities at random values in `[0,1]`
+2. Calculate Peter's exact EV per hand in place of an MSE
+3. Shift each probability by `+lr` or `-lr` and keep a change only if it strictly improves EV
+4. Keep sweeping 2,3 until no change improves EV OR the max number of sweeps is hit
+5. Run a simulation of `M` hands with the converged probabilities as a sanity check on the exact EV
+6. Compare exact EV and simulated EV to the equilibrium value of `-1/18`
 
 ## Operator Instructions
 1. **ALWAYS PULL THE LATEST VERSION OF THE REPO BEFORE RUNNING**
-2. Once you finish running however many simulations, if MSE has stopped, see 3. If MSE has not stopped, see 4
-3. If MSE has stopped, log the total number of iterations taken in log.md along with the beta/alpha and EV/(-1/18)
-4. If MSE has not stopped, log the current total number of iterations taken and current beta value in log.md
-5. **MAKE SURE TO PUSH YOUR LOG.MD and BETA VALUE ONTO THE REPO**
+2. Run `logic.py`. It prints `bet_J`, `bet_Q`, `bet_K`, `call_Q`, the exact EV, and the simulated EV
+3. If exact EV is `~-1/18`, log the probabilities and EV/(-1/18) in `log.md`, along with the starting values it began from
+4. If exact EV is not `~-1/18`, log the probabilities and EV in `log.md`, then rerun from a new random start
+5. **MAKE SURE TO PUSH YOUR `log.md` AND PROBABILITIES ONTO THE REPO**
 
-## TO DO:
-1. Determine N, M, learning rate (lr)
-2. Write code for program (optional)
-3. Run iterations (4090 preferred!)
+## TO DO
+1. Determine `M` and the final learning rate `lr`
+2. Run multiple random starts to see which probabilities we converge to
+3. Compare the converged probabilities to the known equilibrium:
+    * `bet_J = alpha`
+    * `bet_K = 3*alpha`
+    * `call_Q = alpha + 1/3`
+    * `bet_Q = 0`
+
 **99999**. 3 man Kuhn Poker
