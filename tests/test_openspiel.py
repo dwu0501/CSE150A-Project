@@ -5,6 +5,7 @@ import random
 import unittest
 
 from evaluate import EQUILIBRIUM_P2, evaluate
+from q_learning import OPPONENTS, greedy_policy, train
 
 
 @unittest.skipUnless(importlib.util.find_spec('pyspiel'), 'optional open-spiel not installed')
@@ -22,6 +23,10 @@ class OpenSpielTest(unittest.TestCase):
         profiles += [(rng.choices([0, 1], k=6), rng.choices([0, 1], k=6)) for _ in range(8)]
         profiles += [([rng.random() for _ in range(6)], [rng.random() for _ in range(6)])
                      for _ in range(12)]
+        # Independently verify the scores of real learned policies, including unreachable states.
+        for opponent in OPPONENTS.values():
+            q, _ = train(opponent, episodes=60_000, seed=150)
+            profiles.append((greedy_policy(q), opponent))
         for p1, p2 in profiles:
             with self.subTest(p1=p1, p2=p2):
                 table = policy.TabularPolicy(game)

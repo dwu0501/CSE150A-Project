@@ -46,6 +46,28 @@ For the first logged policy, P1 scores **−0.05556** against the fixed opponent
 
 Run `python3 -m unittest discover -s tests -v` from the repo root. The tests compare the best replies to exhaustive search over each seat's 64 deterministic strategies. For the optional independent check, install `open-spiel==2.0.2` in a virtual environment and run that same command there. The OpenSpiel test checks expected payoff, both best-response values and profile exploitability for equilibrium, deterministic and mixed policies. The evaluator itself needs only Python's standard library.
 
+## Fixed-opponent Q-learning
+
+`q_learning.py` trains P1 from sampled hands against one stationary P2 per run. The learner sees only its card and whether it is opening or facing a bet after checking: six information sets × two actions. All 12 Q-values start at zero; no jack or king actions are hard-coded. Exploration is ε-greedy (`--epsilon`, default 0.2). A terminal action updates toward the net chip reward; a check followed by a bet updates toward the larger Q-value at P1's next decision. The discount is 1 and the step size is 1 divided by the number of visits to that state-action pair.
+
+```sh
+# Train one agent and print its 12 Q-values, visit counts, six policy probabilities and exact scores.
+python3 q_learning.py --opponent random --episodes 100000 --seeds 0
+# Reproduce the table below: fresh Q-table for each opponent/seed, 20 runs in total.
+python3 q_learning.py --opponent all --episodes 100000 --epsilon 0.2 --seeds 0 1 2 3 4
+```
+
+After training, the learner freezes its greedy policy (no exploration; exact ties split 50/50). The evaluator scores that same policy against the training opponent and against its strongest legal counter. All entries are P1 chips per hand; the untrained baseline plays each legal action with probability 1/2. The two trained columns are medians across the five seeds.
+
+| Fixed P2 (bet after check / call facing bet) | Untrained vs P2 | Trained vs P2 | Best possible vs P2 | Trained vs best counter |
+| --- | ---: | ---: | ---: | ---: |
+| Always-pass (check / fold) | +0.5000 | +1.0000 | +1.0000 | −0.5000 |
+| Always-bet (bet / call) | −0.2500 | +0.3333 | +0.3333 | −0.1667 |
+| Random (50/50 at each decision) | +0.1250 | +0.5000 | +0.5000 | −0.3333 |
+| Fixed equilibrium | −0.1667 | −0.0556 | −0.0556 | −0.1667 |
+
+Against the random bot, all five seeds reached +0.5, the exact best-response value. They did not learn equally robust policies: against their best counter, three scored −1/3 and two scored −1/2. This is a fixed-opponent experiment, not self-play or evidence of equilibrium convergence. Run the tests with the command in **Evaluating a policy** above.
+
 ## Operator Instructions
 1. **ALWAYS PULL THE LATEST VERSION OF THE REPO BEFORE RUNNING**
 2. Run `logic.py`. It prints `bet_J`, `bet_Q`, `bet_K`, `call_Q`, the exact EV, and the simulated EV
