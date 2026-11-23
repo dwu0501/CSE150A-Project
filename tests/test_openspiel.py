@@ -6,6 +6,7 @@ import unittest
 
 from evaluate import EQUILIBRIUM_P2, evaluate
 from q_learning import OPPONENTS, greedy_policy, train
+from self_play import METHODS, run
 
 
 @unittest.skipUnless(importlib.util.find_spec('pyspiel'), 'optional open-spiel not installed')
@@ -27,6 +28,9 @@ class OpenSpielTest(unittest.TestCase):
         for opponent in OPPONENTS.values():
             q, _ = train(opponent, episodes=60_000, seed=150)
             profiles.append((greedy_policy(q), opponent))
+        for method in METHODS:
+            for row in run(method, (1, 8), 1000, .2, 3):
+                profiles.extend([row['current'], row['average']])
         for p1, p2 in profiles:
             with self.subTest(p1=p1, p2=p2):
                 table = policy.TabularPolicy(game)

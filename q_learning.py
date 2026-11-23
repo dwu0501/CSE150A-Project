@@ -39,7 +39,7 @@ def greedy_policy(q):
     return tuple(1.0 if a1 > a0 else 0.0 if a0 > a1 else 0.5 for a0, a1 in q)
 
 
-def train(p2, *, episodes=100_000, epsilon=0.2, seed=150):
+def train(p2, *, episodes=100_000, epsilon=0.2, seed=150, on_hand=None):
     """Return Q-values and visit counts. Only the environment sees P2's card/policy."""
     if not isinstance(episodes, int) or isinstance(episodes, bool) or episodes < 1:
         raise ValueError('episodes must be a positive integer')
@@ -51,7 +51,7 @@ def train(p2, *, episodes=100_000, epsilon=0.2, seed=150):
     rng = random.Random(seed)
     q = [[0.0, 0.0] for _ in range(6)]
     visits = [[0, 0] for _ in range(6)]
-    for _ in range(episodes):
+    for hand in range(1, episodes + 1):
         state, other_card = rng.choice(DEALS)
         while state is not None:
             passive, aggressive = q[state]
@@ -62,7 +62,30 @@ def train(p2, *, episodes=100_000, epsilon=0.2, seed=150):
             next_state, reward = step(state, action, other_card, p2, rng)
             td_update(q, visits, state, action, reward, next_state)
             state = next_state
+        if on_hand is not None:
+            on_hand(hand, q)
     return q, visits
+
+
+def checkpoint_run(name, checkpoints, epsilon, seed):
+    """Freeze greedy policies after completed hands of ONE uninterrupted run."""
+    points = tuple(checkpoints)
+    if (not points or any(type(n) is not int or n < 1 for n in points)
+            or points != tuple(sorted(set(points)))):
+        raise ValueError('checkpoints must be positive and strictly increasing')
+    wanted = set(points)
+    rows = []
+    p2 = OPPONENTS[name]
+
+    def snapshot(hand, q):
+        if hand in wanted:
+            policy = greedy_policy(q)
+            scores = evaluate(policy, p2)
+            rows.append(dict(opponent=name, seed=seed, hands=hand, policy=policy,
+                             **{k: scores[k] for k in ('p1_ev', 'p1_worst_case_ev', 'p1_security_gap')}))
+
+    train(p2, episodes=points[-1], epsilon=epsilon, seed=seed, on_hand=snapshot)
+    return rows
 
 
 def experiment(name, episodes, epsilon, seed):
