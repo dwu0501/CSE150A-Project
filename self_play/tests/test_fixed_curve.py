@@ -5,16 +5,16 @@ import sys
 import tempfile
 from pathlib import Path
 
-import q_learning as ql
-from evaluate import evaluate
+import self_play.q_learning as ql
+from common.evaluate import evaluate
 
 
 class FixedCurveTest(unittest.TestCase):
     def test_curve_cli_saves_policies(self):
-        cli = Path(__file__).resolve().parents[1] / 'fixed_curve.py'
+        root = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory() as out:
-            cmd = [sys.executable, str(cli), '--out', out, '--checkpoints', '20', '60', '--seeds', '0', '1', '--data-only']
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            cmd = [sys.executable, '-m', 'self_play.fixed_curve', '--out', out, '--checkpoints', '20', '60', '--seeds', '0', '1', '--data-only']
+            result = subprocess.run(cmd, capture_output=True, text=True, cwd=root)
             self.assertEqual(result.returncode, 0, result.stderr)
             data = json.loads((Path(out) / 'fixed.json').read_text())
             self.assertEqual(len(data['rows']), 24)  # 4 bots x 2 seeds x (baseline + 2)

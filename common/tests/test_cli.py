@@ -4,12 +4,12 @@ import sys
 import unittest
 from pathlib import Path
 
-CLI = Path(__file__).resolve().parents[1] / 'evaluate.py'
+ROOT = Path(__file__).resolve().parents[2]
 ROW = 'params (bet_J, bet_Q, bet_K, call_Q):[0.406, 0.0, 0.74, 0.341]\n'
 
 
 def run(*args, text=''):
-    return subprocess.run([sys.executable, str(CLI), *args], input=text,
+    return subprocess.run([sys.executable, '-m', 'common.evaluate', *args], input=text, cwd=ROOT,
                           capture_output=True, text=True)
 
 

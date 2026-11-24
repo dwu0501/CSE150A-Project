@@ -4,7 +4,7 @@ import argparse
 import json
 import random
 
-from evaluate import DEALS, EQUILIBRIUM_P2, evaluate
+from common.evaluate import DEALS, EQUILIBRIUM_P2, evaluate
 
 OPPONENTS = {
     'always-pass': (0.0,) * 6,   # check / fold

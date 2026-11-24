@@ -2,8 +2,8 @@ import itertools
 import random
 import unittest
 
-from evaluate import evaluate
-from beta_logic import expected_payoff  # archived hill-climber; PR #3 replaces logic.py
+from common.evaluate import evaluate
+from hill_climbing.hill_climbing import expected_payoff
 
 
 class EvaluationTest(unittest.TestCase):

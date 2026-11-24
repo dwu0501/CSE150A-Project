@@ -9,11 +9,13 @@ Nothing here is a new algorithm: every learner is the team's existing code.
 This file only loops over seeds/settings, freezes policies at checkpoints,
 scores them exactly with evaluate.py, and writes JSON + text logs.
 
+Logs go to q_learning/logs/ (stage 2) and self_play/logs/ (stage 3).
+
 Usage (from the repo root):
-    python experiments/run_experiments.py stage2
-    python experiments/run_experiments.py fixed
-    python experiments/run_experiments.py selfplay
-    python experiments/run_experiments.py all
+    python -m common.run_experiments stage2
+    python -m common.run_experiments fixed
+    python -m common.run_experiments selfplay
+    python -m common.run_experiments all
 Add --quick for a small smoke-test budget.
 """
 
@@ -29,13 +31,15 @@ from statistics import median
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import partial_q_learning as pq                      # noqa: E402  (Brian)
-from evaluate import evaluate                        # noqa: E402  (Kevin)
-from q_learning import OPPONENTS, checkpoint_run     # noqa: E402  (Kevin)
-from self_play import run as selfplay_run            # noqa: E402  (Kevin)
-from curve_io import save_curve                      # noqa: E402  (Kevin)
+from q_learning import partial_q_learning as pq                # noqa: E402  (Brian)
+from common.evaluate import evaluate                           # noqa: E402  (Kevin)
+from self_play.q_learning import OPPONENTS, checkpoint_run     # noqa: E402  (Kevin)
+from self_play.self_play import run as selfplay_run            # noqa: E402  (Kevin)
+from common.curve_io import save_curve                         # noqa: E402  (Kevin)
 
-LOGS = Path(__file__).resolve().parent / 'logs'
+# Each implementation keeps its own logs.
+LOGS = {'stage2': ROOT / 'q_learning' / 'logs', 'fixed': ROOT / 'self_play' / 'logs',
+        'selfplay': ROOT / 'self_play' / 'logs'}
 TOL = 1e-9
 
 # ---------------------------------------------------------------- budgets
@@ -114,7 +118,7 @@ def stage2(budget):
             print(f'  stage2 q={label} seed={seed} done ({time.time() - t0:.0f}s)', flush=True)
     data['seconds'] = round(time.time() - t0, 1)
     data['rows'] = rows
-    save_curve(data, LOGS / 'stage2_partial_q.json')
+    save_curve(data, LOGS['stage2'] / 'partial_q_learning.json')
 
     lines = [f"Stage 2: partial Q-learning, eps={STAGE2_EPS}, {len(budget['seeds'])} seeds, "
              f"{data['seconds']} s", '',
@@ -125,7 +129,7 @@ def stage2(budget):
             lines.append(f"{label:>5} {n:>9,} {sum(r['at_best_response'] for r in rs):>3}/{len(rs):<2} "
                          f"{median(r['p1_ev'] for r in rs):>10.5f} {rs[0]['best_possible_ev']:>9.5f} "
                          f"{median(r['worst_case_ev'] for r in rs):>13.5f}")
-    write_summary('stage2_partial_q.txt', lines)
+    write_summary(LOGS['stage2'] / 'partial_q_learning.txt', lines)
 
 
 # ---------------------------------------------------------------- stage 3a
@@ -145,7 +149,7 @@ def fixed(budget):
             print(f'  fixed {name} seed={seed} done ({time.time() - t0:.0f}s)', flush=True)
     data['seconds'] = round(time.time() - t0, 1)
     data['rows'] = rows
-    save_curve(data, LOGS / 'stage3_fixed_opponents.json')
+    save_curve(data, LOGS['fixed'] / 'fixed_opponents.json')
 
     lines = [f"Stage 3a: Q-learning vs fixed bots, eps={STAGE3_EPS}, {len(budget['seeds'])} seeds, "
              f"{data['seconds']} s", '',
@@ -156,7 +160,7 @@ def fixed(budget):
             lines.append(f"{name:>12} {n:>9,} {sum(r['at_best_response'] for r in rs):>3}/{len(rs):<2} "
                          f"{median(r['p1_ev'] for r in rs):>10.5f} {rs[0]['best_possible_ev']:>9.5f} "
                          f"{median(r['p1_worst_case_ev'] for r in rs):>13.5f}")
-    write_summary('stage3_fixed_opponents.txt', lines)
+    write_summary(LOGS['fixed'] / 'fixed_opponents.txt', lines)
 
 
 # ---------------------------------------------------------------- stage 3b
@@ -173,7 +177,7 @@ def selfplay(budget):
             print(f'  selfplay {method} seed={seed} done ({time.time() - t0:.0f}s)', flush=True)
     data['seconds'] = round(time.time() - t0, 1)
     data['rows'] = rows
-    save_curve(data, LOGS / 'stage3_selfplay.json')
+    save_curve(data, LOGS['selfplay'] / 'selfplay.json')
 
     lines = [f"Stage 3b: self-play exploitability, eps={STAGE3_EPS}, {budget['batch']} hands/round, "
              f"{len(budget['seeds'])} seeds, {data['seconds']} s", '',
@@ -186,12 +190,12 @@ def selfplay(budget):
             lines.append(f"{method:>8} {r:>6} {rs[0]['hands']:>10,} "
                          f"{median(x['current_exploitability'] for x in rs):>14.5f} "
                          f"{median(avg):>14.5f} {min(avg):>12.5f} {max(avg):>12.5f}")
-    write_summary('stage3_selfplay.txt', lines)
+    write_summary(LOGS['selfplay'] / 'selfplay.txt', lines)
 
 
-def write_summary(name, lines):
+def write_summary(path, lines):
     text = '\n'.join(lines) + '\n'
-    (LOGS / name).write_text(text, encoding='utf-8')
+    path.write_text(text, encoding='utf-8')
     print(text)
 
 
@@ -201,10 +205,11 @@ def main():
     parser.add_argument('stage', choices=['stage2', 'fixed', 'selfplay', 'all'])
     parser.add_argument('--quick', action='store_true', help='tiny smoke-test budget')
     args = parser.parse_args()
-    global LOGS
     if args.quick:
-        LOGS = LOGS / 'quick'
-    LOGS.mkdir(parents=True, exist_ok=True)
+        for key in LOGS:
+            LOGS[key] = LOGS[key] / 'quick'
+    for path in LOGS.values():
+        path.mkdir(parents=True, exist_ok=True)
     budget = QUICK if args.quick else FULL
     jobs = {'stage2': stage2, 'fixed': fixed, 'selfplay': selfplay}
     for name in (jobs if args.stage == 'all' else [args.stage]):

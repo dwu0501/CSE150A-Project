@@ -1,8 +1,8 @@
 """Two-seat Kuhn experiments. Policies are six bet/call probabilities per seat."""
 import random
 
-from evaluate import DEALS, evaluate
-from q_learning import greedy_policy, td_update
+from common.evaluate import DEALS, evaluate
+from self_play.q_learning import greedy_policy, td_update
 
 UNIFORM = (.5,) * 6
 METHODS = ('naive', 'learned', 'exact')
