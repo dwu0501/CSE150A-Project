@@ -544,6 +544,12 @@ $1$       & $+1/6$ or $0$ (13.5\% stuck) & $+1/6$ & 5/5 \\
 \end{table}
 
 Both methods reach the same best response at every $q$, so the model-based and model-free answers agree. Q-learning also shows the same flat directions: at $q = 1/3$ the learned \texttt{bet\_J}, \texttt{bet\_K} and \texttt{call\_Q} changed from seed to seed, and the Q-values for betting and checking a King were tied within noise (e.g.\ 1.166 vs.\ 1.171). Q-learning did avoid the local optimum at $q = 1$. Exploration makes Peter sometimes check a Queen, so he learns that calling afterward pays off. The value of checking then includes that call, which is the coordinated change that one-variable-at-a-time hill climbing could not make. The cost is data: Q-learning needs about 200{,}000 sampled hands per run, while hill climbing needs a few hundred exact six-term EV evaluations.
+% Report the completed two-seat experiment separately from Brian's fixed-opponent runs.
+% Source: results/selfplay.json, round 100, average_exploitability (five seeds per method).
+\subsection{Self-play: when both players learn}
+After 100{,}000 sampled hands per seed, the median exploitability of the two players' average strategies was $0.0453$ chips per hand for na\"ive self-play and $0.0404$ for fictitious play with Q-learned replies.
+Lower is better, but the five-seed ranges overlapped ($0.0151$--$0.0497$ and $0.0326$--$0.0623$, respectively), so these runs do not establish that either method is better.
+
 % ===========================================================================
 \section{Conclusion}
 
@@ -561,10 +567,11 @@ strategy.
 exploit them. Changing one variable at a time can also get stuck at local
 optima.
 
-\paragraph{Extensions.} To learn the full equilibrium, the objective has to
-account for an opponent who adapts. Possible next steps are to minimize
-exploitability directly, to let both players learn as originally proposed,
-and to move on to three-player Kuhn poker~\cite{wiki,szafron2013}. Our model
+% Both seats already learned in the self-play experiment above; the open question is convergence.
+\paragraph{Extensions.} Neither self-play method reached zero exploitability
+in these runs. A next step is to test whether training longer brings the average
+strategies closer to equilibrium. Other extensions are to minimize exploitability
+directly or study three-player Kuhn poker~\cite{wiki,szafron2013}. Our fixed-opponent model
 got the right answer for the value while mostly missing the strategy behind
 it. As the professor says: all models are wrong but some are useful.
 
