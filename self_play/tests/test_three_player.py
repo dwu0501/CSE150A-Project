@@ -6,7 +6,7 @@ import unittest
 @unittest.skipUnless(importlib.util.find_spec("pyspiel"), "install open-spiel for three-player Kuhn")
 class ThreePlayerTests(unittest.TestCase):
     def test_uniform_baseline(self):
-        from three_player import experiment
+        from self_play.three_player import experiment
 
         row = experiment([0])["checkpoints"][0]
         # Exact expectations for equiprobable actions and four distinct cards.
@@ -16,7 +16,7 @@ class ThreePlayerTests(unittest.TestCase):
 
     def test_saved_profile_reproduces_final_checkpoint(self):
         import pyspiel
-        from three_player import experiment
+        from self_play.three_player import experiment
 
         data = experiment([10, 0, 10])
         self.assertEqual([c["iteration"] for c in data["checkpoints"]], [0, 10])
@@ -32,7 +32,7 @@ class ThreePlayerTests(unittest.TestCase):
         self.assertEqual(data["final_policy"], experiment([10])["final_policy"])
 
     def test_rejects_empty_or_invalid_checkpoints(self):
-        from three_player import experiment
+        from self_play.three_player import experiment
 
         for invalid in ([], [-1], [1.5], [True]):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):

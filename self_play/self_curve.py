@@ -4,8 +4,8 @@ import argparse
 from pathlib import Path
 from statistics import median
 
-from self_play import METHODS, run
-from curve_io import save_curve
+from self_play.self_play import METHODS, run
+from common.curve_io import save_curve
 
 
 def collect(rounds, batch, epsilon, seeds):
@@ -45,7 +45,7 @@ def main():
     p.add_argument('--batch', type=int, default=1000, help='sampled hands per round, even; split between seats in fictitious play')
     p.add_argument('--epsilon', type=float, default=.2)
     p.add_argument('--seeds', type=int, nargs='+', default=list(range(5)))
-    p.add_argument('--out', type=Path, default=Path('results'))
+    p.add_argument('--out', type=Path, default=Path('self_play/results'))
     p.add_argument('--data-only', action='store_true')
     a = p.parse_args()
     try:

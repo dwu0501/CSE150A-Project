@@ -4,9 +4,9 @@ import importlib.util
 import random
 import unittest
 
-from evaluate import EQUILIBRIUM_P2, evaluate
-from q_learning import OPPONENTS, greedy_policy, train
-from self_play import METHODS, run
+from common.evaluate import EQUILIBRIUM_P2, evaluate
+from self_play.q_learning import OPPONENTS, greedy_policy, train
+from self_play.self_play import METHODS, run
 
 
 @unittest.skipUnless(importlib.util.find_spec('pyspiel'), 'optional open-spiel not installed')

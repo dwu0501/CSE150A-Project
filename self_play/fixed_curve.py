@@ -4,9 +4,9 @@ import argparse
 from pathlib import Path
 from statistics import median
 
-from evaluate import GAME_VALUE, evaluate
-from curve_io import save_curve
-from q_learning import OPPONENTS, checkpoint_run
+from common.evaluate import GAME_VALUE, evaluate
+from common.curve_io import save_curve
+from self_play.q_learning import OPPONENTS, checkpoint_run
 
 
 def collect(points, seeds, epsilon):
@@ -51,7 +51,7 @@ def main():
     p.add_argument('--checkpoints', nargs='+', type=int, default=[1000, 10000, 100000])
     p.add_argument('--seeds', nargs='+', type=int, default=list(range(5)))
     p.add_argument('--epsilon', type=float, default=.2)
-    p.add_argument('--out', type=Path, default=Path('results'))
+    p.add_argument('--out', type=Path, default=Path('self_play/results'))
     p.add_argument('--data-only', action='store_true')
     a = p.parse_args()
     if len(set(a.seeds)) != len(a.seeds):

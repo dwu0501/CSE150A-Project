@@ -1,12 +1,12 @@
 import random
 import unittest
 
-from evaluate import DEALS, evaluate
+from common.evaluate import DEALS, evaluate
 
 
 class SelfPlayTest(unittest.TestCase):
     def test_p2_reward_sign_finds_best_reply(self):
-        import self_play as sp
+        import self_play.self_play as sp
         uniform = (.5,) * 6
         for seat in (0, 1):
             reply = sp.learned_reply(seat, uniform, 60000, random.Random(1), .2)
@@ -14,13 +14,13 @@ class SelfPlayTest(unittest.TestCase):
             self.assertAlmostEqual(scores['p1_ev'], scores['p1_best_response_ev' if seat == 0 else 'p1_worst_case_ev'])
 
     def test_export_uses_one_deterministic_reference(self):
-        from self_curve import collect
+        from self_play.self_curve import collect
         rows = collect(2, 10, .2, [0,1])['rows']
         self.assertEqual(len(rows), 15)
         self.assertEqual({r['seed'] for r in rows if r['method']=='exact'}, {None})
 
     def test_paths_use_own_card_and_zero_sum_rewards(self):
-        import self_play as sp
+        import self_play.self_play as sp
         for i, j in DEALS:
             for open_bet, after_check, facing_bet in ((1,0,0),(1,0,1),(0,0,0),(0,1,0),(0,1,1)):
                 p1 = lambda state: open_bet if state < 3 else facing_bet
@@ -33,7 +33,7 @@ class SelfPlayTest(unittest.TestCase):
                 self.assertEqual(path2, [(j+3, facing_bet)] if open_bet else [(j,after_check)])
 
     def test_average_equals_mixture_in_payoff_not_pointwise(self):
-        import self_play as sp
+        import self_play.self_play as sp
         rng = random.Random(12)
         a, b, opp = [tuple(rng.random() for _ in range(6)) for _ in range(3)]
         for seat in (0,1):
@@ -43,7 +43,7 @@ class SelfPlayTest(unittest.TestCase):
             self.assertAlmostEqual(val(avg.policy()), (val(a)+val(b))/2, places=12)
 
     def test_checkpoints_rescore_and_hand_budgets(self):
-        import self_play as sp
+        import self_play.self_play as sp
         for method in ('naive', 'learned', 'exact'):
             runner = lambda: sp.run(method, [0, 1, 5], 100, .2, 2)
             rows = runner()
