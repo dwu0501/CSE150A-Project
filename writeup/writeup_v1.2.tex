@@ -85,18 +85,22 @@
 \begin{abstract}
 Kuhn poker is a three-card version of poker whose optimal (Nash equilibrium)
 strategy is known exactly. At equilibrium, player one expects to lose $1/18$
-of a chip per hand~\cite{wiki}. We fix player two, whom we call \pbj{}, at
-its equilibrium strategy and train player one, whom we call \peter{}. \peter's
-strategy is four probabilities: \code{bet\_J}, \code{bet\_Q}, \code{bet\_K}
-and \code{call\_Q}. We compute \peter's expected value (EV) exactly by
-enumeration, maximize it with hill climbing, and check every result with a
-simulation of $M = 200{,}000$ hands. Over 10{,}000 random restarts, every run
-reached the equilibrium EV of $-1/18$. The simulated EVs averaged $-0.055556$,
-and the typical run was off by $0.003$ (about 5\%), which is ordinary sampling
-noise. The learned strategies, however, were not equilibrium strategies.
-Against \pbj, three of the four probabilities have no effect on the EV, so
-they never moved from their random starting values. Our model matches the
-optimal \emph{value} but not the optimal \emph{strategy}.
+of a chip per hand~\cite{wiki}. We ask how close a learning agent can get to
+that optimum, and we answer in three stages that follow how our code evolved.
+(1) With player two (\pbj) fixed at equilibrium, we maximize player one's
+(\peter's) exact expected value (EV) over four probabilities by hill climbing.
+All 10{,}000 restarts reach $-1/18$, but three of the four probabilities never
+move, so the learned strategies lose an extra $0.19$ chips per hand to a best
+counter-strategy. (2) A tabular Q-learner that sees only sampled chips finds the
+same best responses against five versions of \pbj{} in at most $100{,}000$
+hands, and escapes a local optimum that traps hill climbing. (3) Finally both
+players learn only from their own winnings. Using an exact evaluator built on
+Bayes' rule over the hidden card, we measure \emph{exploitability}, the
+distance from equilibrium. Naive self-play and fictitious self-play with
+Q-learned replies cut it from $0.458$ to about $0.04$ chips per hand but then
+plateau, even with $10\times$ more hands; fictitious play with exact replies
+keeps falling to $0.006$. Learning the optimal \emph{value} is easy; learning
+the optimal \emph{strategy} needs both players to adapt and accurate replies.
 \end{abstract}
 
 % ===========================================================================
@@ -128,24 +132,13 @@ goes to a showdown, or bet; the first player must then call or fold. After a
 bet, the second player calls (showdown) or folds. At a showdown the higher card
 wins the pot.
 
-\paragraph{Naming conventions.} We follow the names in our project README:
-\begin{itemize}\itemsep0pt
-  \item \textbf{\peter} (the ``training'' player) always acts first (player
-  one). \peter{} is the player we train.
-  \item \textbf{\pbj} (the ``optimal'' player) always acts second (player
-  two) and plays the optimal strategy.
-  \item \textbf{\code{bet\_J}, \code{bet\_Q}, \code{bet\_K}} are \peter's
-  chances of betting first with a Jack, Queen or King. Checking is the
-  complement, e.g.\ the chance of checking with a Jack is $1 - \code{bet\_J}$.
-  \item \textbf{\code{call\_Q}} is \peter's chance of calling when he has
-  checked a Queen and \pbj{} bets.
-  \item \textbf{$\alpha$} indexes \peter's family of optimal strategies; any
-  $\alpha \in [0, 1/3]$ is optimal.
-  \item \textbf{$q$} is \pbj's bluffing and calling probability (optimal:
-  $q = 1/3$).
-  \item \textbf{\code{lr}} is the hill-climbing step size, and \textbf{$M$} is
-  the number of simulated hands.
-\end{itemize}
+\paragraph{Naming conventions.} \textbf{\peter} is player one (acts first);
+\textbf{\pbj} is player two. \code{bet\_J}, \code{bet\_Q}, \code{bet\_K} are
+\peter's chances of betting first with a Jack, Queen or King (checking is the
+complement), and \code{call\_Q} is his chance of calling after checking a Queen
+into a bet. $q$ is \pbj's bluffing and calling probability, $\alpha$ indexes
+\peter's optimal strategies, \code{lr} is the hill-climbing step size, $M$ the
+number of simulated hands, and $\epsilon$ the exploration rate.
 
 \paragraph{The optimal strategy.} At equilibrium, \peter{} expects to lose
 $1/18 \approx 0.0556$ chips per hand~\cite{wiki}. \pbj{} has one equilibrium
@@ -169,10 +162,14 @@ of distinct cards for \peter{} and \pbj{}. The six possible deals are equally
 likely ($1/6$ each). Everything else that happens in a hand is drawn from the
 two players' strategies. We use this data in two ways. For the exact EV, we
 enumerate all six deals and every branch of the betting tree. For
-verification, we simulate $M$ random hands. Our final run (\code{logic.py})
+verification, we simulate $M$ random hands. The stage-1 run (\code{logic.py})
 repeated the full pipeline from 10{,}000 random starts and wrote each run's
-learned probabilities and simulated EV to \code{log.txt}. Our earlier
-\code{beta\_logic.py} did a single run and printed the result.
+learned probabilities and simulated EV to \code{log.txt}. For stages 2 and 3
+the sampled hands \emph{are} the training data: every learner sees one dealt
+hand at a time and only its own card, its actions and the chips won. We use
+seeds 0--9 for every sampled configuration and freeze each run's policy after
+$10^3$, $10^4$, $10^5$ and $10^6$ hands; \code{experiments/run\_experiments.py}
+writes every checkpoint to JSON logs in \code{experiments/logs/}.
 
 \paragraph{Processing and feature selection.} Simulated data has no missing
 values or noise to clean, so our processing is about choosing the right
@@ -188,13 +185,11 @@ variables:
   facing a bet, since a Jack can never win a showdown. He always calls with a
   King, since a King can never lose one. Fixing these leaves four free
   variables.
-  \item \textbf{Log processing.} The log rounds probabilities to three
-  decimals and stores only the simulated EV. For the analysis we recomputed
-  each run's exact EV from the logged probabilities.
 \end{itemize}
 
 % ===========================================================================
 \section{Modeling and Inference}
+\label{sec:model}
 
 \begin{figure}[htb]
 \centering
@@ -226,77 +221,135 @@ means \peter{} wins if he holds the higher card and loses otherwise.}
 \label{fig:tree}
 \end{figure}
 
-\paragraph{Model.} Because \pbj{} is fixed at the equilibrium strategy, \pbj{}
-becomes part of the environment, and the game is a single-agent MDP for
-\peter{}. A state is \peter's information set (his card plus the betting so
-far), the actions are bet/check or call/fold, and the reward is the net chips
-won. Figure~\ref{fig:tree} shows the structure.
+\paragraph{Shared model.} Kuhn poker is a two-player zero-sum game with
+imperfect information. A player's state is an \emph{information set}: their own
+card plus the betting so far (six per player). Actions are bet/check or
+call/fold, and the reward is the net chips won at the end of the hand
+(Figure~\ref{fig:tree}). Assumptions: (1) \peter{} always acts first; (2) each
+player sees only their own card, so a strategy is one betting probability per
+information set; (3) the deal is uniform over the six ordered pairs; (4) the
+showdown depends on both cards. When one player's strategy is held fixed, that
+player becomes part of the environment and the game is a single-agent MDP over
+the other player's information sets. Stages 1 and 2 use this reduction;
+stage 3 drops it.
 
-\paragraph{Assumptions and dependencies.} (1) \peter{} always acts first.
-(2) \peter{} sees only his own card, so his actions depend only on that card.
-(3) \pbj's actions depend only on \pbj's card and \peter's last action.
-(4) The showdown outcome depends on both cards. The parameters are \peter's
-four probabilities and \pbj's $q$ (fixed at $1/3$ unless stated otherwise).
+\paragraph{Inference about the hidden card.} The opponent's card is a hidden
+variable. Given the opponent's strategy, the posterior over it follows Bayes'
+rule, $P(c \mid \text{actions}) \propto P(\text{actions} \mid c)\,P(c)$. For
+example, if \peter{} checks a Queen and \pbj{} bets, \pbj{} holds the King
+with probability $\frac{1 \cdot 1/2}{1\cdot 1/2 + \frac13 \cdot 1/2} = 3/4$.
 
-\paragraph{Exact inference.} For a given strategy we compute \peter's exact EV
-per hand. We add up payoff $\times$ probability over all six deals and every
-branch of Figure~\ref{fig:tree}. Every coin flip is replaced by its
-probability, so the result has no sampling noise. We use this exact EV as the
-objective instead of a mean-squared error.
-
-\paragraph{Learning.} We use coordinate hill climbing, a simple form of policy
-search. Starting from random values of the four probabilities, we nudge each
-one up or down by $\code{lr} = 0.005$ and keep the change only if it strictly
-raises the EV. We repeat until no nudge helps, or for at most 1000 sweeps.
-
-\paragraph{Approximate inference (verification).} We then estimate the same EV
-by Monte Carlo sampling. We simulate $M = 200{,}000$ hands with the learned
-probabilities and compare the result with the exact EV and with $-1/18$.
-
-\paragraph{Model-free check: Q-learning.} Our proposal planned Q-learning. We kept hill climbing on the exact EV as our main method, and we also trained Peter with tabular Q-learning as a model-free comparison (Section~4.5). Q-learning never sees PB\&J's strategy or the exact EV; it learns only from the chips won in sampled hands. We use exploitability only to analyze the results (Section~4.3).
-% ===========================================================================
-\section{Results and Discussion}
-
-\subsection{Comparing configurations}
+\paragraph{Exact evaluation and exploitability.} Our evaluator
+(\code{evaluate.py}) enumerates the six deals and every branch of
+Figure~\ref{fig:tree}, replacing each coin flip by its probability, so it
+returns exact EVs with no sampling noise. Working backward through the tree
+with the posterior above, it also finds each player's exact \emph{best
+response} to a fixed opponent. We verified it against brute force over all 64
+deterministic strategies per player and against OpenSpiel's Kuhn
+poker~\cite{openspiel}. For a strategy pair $(\pi_1, \pi_2)$, the
+exploitability is half the total amount the two players could gain by switching
+to their best responses,
+\[
+  \text{expl}(\pi_1,\pi_2) = \tfrac12\big[\max_{\pi_1'} v(\pi_1',\pi_2) - \min_{\pi_2'} v(\pi_1,\pi_2')\big],
+\]
+where $v$ is \peter's EV. It is $0$ exactly at a Nash equilibrium. Exact
+evaluation is used only to \emph{score} frozen policies in stages 2--3; the
+learners there never see it.
 
 \begin{table}[tb]
 \centering
 \small
-\caption{Configurations compared. Learning-rate and $q$ rows use 1{,}000
-random starts each; $M$ rows use repeated simulations of one equilibrium
-strategy ($\alpha = 0.2$). EV is \peter's exact EV after hill climbing.}
+\caption{How the learner evolved. ``Learns from'' is what the algorithm uses.}
+\label{tab:stages}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llll}
+\toprule
+Stage (code) & Parameters & Learns from & Target \\
+\midrule
+1 Hill climbing (\code{logic.py}) & 4 probabilities & exact EV (\pbj{} known) & best response \\
+2 Partial Q-learning (\code{partial\_q\_learning.py}) & 8 Q-values & sampled chips & best response \\
+3 Self-play (\code{q\_learning.py}, \code{self\_play.py}) & 12 Q-values/player & own chips & equilibrium \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Stage 1: optimizing against a fixed strategy toward a known EV}
+Our first version assumes \pbj's strategy is known and fixed (with parameter
+$q$), so \peter's exact EV is a closed-form function of his four
+probabilities. We maximize it by \emph{coordinate hill climbing}: from a random
+start, nudge each probability up or down by $\code{lr} = 0.005$ and keep a
+change only if it strictly raises the EV; stop when no nudge helps (at most
+1000 sweeps). We then check the EV with a Monte Carlo simulation of
+$M = 200{,}000$ hands. This is planning with a known model, not learning from
+experience, and its target is a known number ($-1/18$ at $q = 1/3$).
+
+\subsection{Stage 2: partial Q-learning (4 decision points)}
+Stage 2 removes the exact EV: \peter{} learns only from the chips won in
+sampled hands, which is model-free reinforcement learning. The states are
+\peter's four non-trivial information sets, $(c, \text{start})$ for each card
+$c$ with actions bet/check, and (Queen, facing a bet) with call/fold, for
+8 Q-values. A Jack facing a bet always folds and a King always calls, since
+those choices are dominated. After each hand, every visited pair is updated
+toward its target,
+\[
+  Q(s,a) \leftarrow Q(s,a) + \tfrac{1}{N(s,a)}\big[y - Q(s,a)\big],\qquad
+  y = \begin{cases} r & \text{last decision of the hand,} \\
+  \max_{a'} Q(s', a') & \text{otherwise,} \end{cases}
+\]
+where $r$ is the chips won, $N(s,a)$ the visit count, and $s'$ = (Queen,
+facing a bet) after \peter{} checks a Queen and \pbj{} bets; there is no
+discounting. Actions are $\epsilon$-greedy ($\epsilon = 0.1$). The
+learned strategy is the greedy policy, which is pure (each probability is 0
+or 1). \pbj{} is still fixed, so the target is still a best response.
+
+\subsection{Stage 3: each player learns from their own winnings}
+Stage 3 makes both players learners, as in our proposal. Each player has a
+Q-table over all six of its information sets (12 Q-values), with the same
+update rule, $\epsilon = 0.2$, and reward equal to its own net chips (\pbj{}
+receives the negative of \peter's). Nothing is forced or hard-coded. We test
+four set-ups. \textbf{Fixed opponents:} \peter{} learns against four fixed
+bots (always-pass, always-bet, uniformly random, equilibrium), to separate
+exploiting a bot from playing well. \textbf{Naive self-play:} both players
+learn at the same time from the same hands. Because a greedy policy is pure, it
+cannot bluff at a mixed rate, so we also track each player's \emph{average}
+strategy over time. \textbf{Fictitious self-play, learned replies:} in each
+round, each player trains a fresh Q-learner for 500 hands against the
+opponent's frozen \emph{average} strategy, then adds that reply to its own
+average~\cite{heinrich2015}. Averaging over replies is what lets a sequence of
+pure strategies approach a mixed equilibrium; fictitious play is known to
+converge in two-player zero-sum games. \textbf{Fictitious play, exact
+replies:} the same loop with each reply computed exactly by the evaluator,
+used as a model-based reference with no sampling. One round of the sampled
+methods uses 1{,}000 hands; we run 1{,}000 rounds ($10^6$ hands).
+% ===========================================================================
+\section{Results and Discussion}
+
+\subsection{Stage 1: hill climbing configurations}
+
+\begin{table}[tb]
+\centering
+\small
+\caption{Stage 1 against \pbj{} with parameter $q$ ($\code{lr} = 0.005$,
+1{,}000 random starts each). EV is \peter's exact EV after hill climbing.}
 \label{tab:configs}
 \begin{tabular}{llll}
 \toprule
 Setting & Final EV & Learned strategy & Cost / stability \\
 \midrule
-\multicolumn{4}{l}{\emph{Learning rate} (\pbj{} optimal, $q = 1/3$)} \\
-\code{lr} $= 0.001$ & $-1/18$ (all runs) & \code{bet\_Q} $= 0$ & 4{,}035 EV evaluations/run \\
-\code{lr} $= 0.005$ (ours) & $-1/18$ (all runs) & \code{bet\_Q} $= 0$ & 822 \\
-\code{lr} $= 0.02$ & $-1/18$ (all runs) & \code{bet\_Q} $= 0$ & 214 \\
-\code{lr} $= 0.1$ & $-1/18$ (all runs) & \code{bet\_Q} $= 0$ & 54 \\
-\midrule
-\multicolumn{4}{l}{\emph{\pbj's strategy $q$} (\code{lr} $= 0.005$)} \\
-$q = 0$   & $+1/6$  & \code{bet\_J}$=1$, \code{call\_Q}$=0$ & all runs agree \\
+$q = 0$  & $+1/6$  & \code{bet\_J}$=1$, \code{call\_Q}$=0$ & all runs agree \\
 $q = 0.2$ & $+1/30$ & \code{bet\_J}$=1$, \code{call\_Q}$=0$ & all runs agree \\
 $q = 1/3$ (optimal) & $-1/18$ & only \code{bet\_Q}$=0$ & 3 of 4 stay random \\
 $q = 0.5$ & $0$ & \code{bet\_J}$=0$, \code{call\_Q}$=1$ & all runs agree \\
 $q = 1$   & $+1/6$ or $0$ & \code{bet\_J}$=0$ & 13.5\% stuck at $0$ \\
-\midrule
-\multicolumn{4}{l}{\emph{Simulated hands $M$} (RMS error of simulated EV)} \\
-$M = 10^3$ & $0.039$ & --- & 0.3\,ms/run \\
-$M = 10^4$ & $0.013$ & --- & 3\,ms/run \\
-$M = 10^5$ & $0.0037$ & --- & 36\,ms/run \\
-$M = 2\times10^5$ (ours) & $0.0034$ & --- & 67\,ms/run \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:configs} compares three settings.
-
-\paragraph{Learning rate.} Every learning rate reached the same answer. A
-larger \code{lr} only made training faster, roughly in proportion: from about
-4{,}000 EV evaluations per run at $0.001$ down to about 50 at $0.1$. The
+\paragraph{Learning rate.} With $\code{lr} \in \{0.001, 0.005, 0.02, 0.1\}$
+(1{,}000 starts each, $q = 1/3$), every run reached $-1/18$ with
+$\code{bet\_Q} = 0$. A larger \code{lr} only made training faster, roughly in
+proportion: from about 4{,}000 EV evaluations per run at $0.001$ down to about
+50 at $0.1$. The
 reason is that the EV changes only through \code{bet\_Q}, and in a straight
 line (Section~\ref{sec:quant}), so step size affects speed but not the result.
 
@@ -314,11 +367,7 @@ off if \peter{} then calls, so lowering \code{bet\_Q} alone made things worse.
 Raising \code{call\_Q} alone changed nothing, because \peter{} never checked a
 Queen. Changing one variable at a time cannot escape this local optimum.
 
-\paragraph{Simulated hands $M$.} The simulation error shrinks like
-$1/\sqrt{M}$, so ten times more hands buys about three times more accuracy.
-Our $M = 200{,}000$ gives errors of about $0.003$ per run.
-
-\subsection{Quantitative results}
+\subsection{Stage 1: quantitative results}
 \label{sec:quant}
 
 All 10{,}000 logged runs reached an exact EV of $-1/18$. Table~\ref{tab:indiff}
@@ -348,6 +397,258 @@ Total & & & $-(1 + \code{bet\_Q})/18$ \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+Appendix~\ref{app:sim} shows that the simulated EVs agree with the exact
+value to within ordinary sampling noise ($\approx 0.003$ per run).
+
+\subsection{Stage 1: qualitative insights}
+\label{sec:qual}
+
+
+
+\paragraph{What the model captures.} The model captures the probabilistic
+reasoning behind the equilibrium. If \peter{} checks a Queen and \pbj{} bets,
+\pbj{} holds the King $3/4$ of the time (Section~\ref{sec:model}), so
+calling and folding both average $-1$ chip, which is exactly why
+\code{call\_Q} does not matter against \pbj. \pbj's bluffing rate of $1/3$ is
+chosen to make \peter{} indifferent in this way.
+
+\paragraph{What the model misses.} Only \code{bet\_Q} matched the equilibrium
+(Table~\ref{tab:params}, Appendix~\ref{app:strategy}). The other three probabilities look exactly like
+uniform random numbers. They have no effect on the EV, so the hill climber
+never accepted a change to them, and they stayed at their random starting
+values. Figure~\ref{fig:strategy}a shows that \code{bet\_J} and \code{bet\_K}
+are scattered across the whole square instead of lying on the equilibrium
+line. Only 1.3\% of runs came within $0.1$ of an equilibrium strategy for some
+$\alpha$. This matters because a real opponent would not stay fixed. If \pbj{}
+switched to its best counter-strategy, it would win an extra $0.19$ chips per
+hand on average from \peter's learned strategies (Figure~\ref{fig:strategy}b),
+more than three times the equilibrium value itself. Our proposal expected
+this when training against a fixed opponent: the learner exploits that
+opponent well but can itself be exploited.
+
+\subsection{Stage 1: convergence and scalability}
+
+Every run converged within at most 200 productive sweeps; the only
+instability was the local optimum at $q = 1$. Almost all of the cost is the
+verification simulation (about 11 minutes for the 10{,}000-run log). More
+restarts or simulated hands would not change the learned strategy, because the
+gap to the equilibrium comes from the objective, not from noise. Exact
+enumeration also needs \pbj's strategy and does not scale to real poker,
+which motivates the model-free stages below.
+
+\subsection{Stage 2: partial Q-learning}
+
+\begin{table}[tb]
+\centering
+\small
+\caption{Learning a best response to a fixed opponent. Number of the 10 seeds
+whose frozen greedy policy is an exact best response after $10^3$--$10^6$
+training hands, and the median EV of the $10^6$-hand policy against the
+opponent's best counter-strategy (worst case).}
+\label{tab:stage2}
+\setlength{\tabcolsep}{4.5pt}
+\begin{tabular}{lcccccc}
+\toprule
+Opponent & Best EV & $10^3$ & $10^4$ & $10^5$ & $10^6$ & Worst-case EV \\
+\midrule
+\multicolumn{7}{l}{\emph{Stage 2: partial Q-learning vs.\ \pbj{} with parameter $q$}} \\
+$q = 0$ & $+1/6$ & 10/10 & 10/10 & 10/10 & 10/10 & $-1/2$ \\
+$q = 0.2$ & $+1/30$ & 7/10 & 10/10 & 10/10 & 10/10 & $-1/2$ \\
+$q = 1/3$ & $-1/18$ & 10/10 & 10/10 & 10/10 & 10/10 & $-1/4$ \\
+$q = 0.5$ & $0$ & 6/10 & 10/10 & 10/10 & 10/10 & $-1/6$ \\
+$q = 1$ & $+1/6$ & 7/10 & 9/10 & 10/10 & 10/10 & $-1/6$ \\
+\midrule
+\multicolumn{7}{l}{\emph{Stage 3: Q-learning over all six information sets vs.\ fixed bots}} \\
+always-pass & $+1$ & 10/10 & 10/10 & 10/10 & 10/10 & $-1/2$ \\
+always-bet & $+1/3$ & 10/10 & 10/10 & 10/10 & 10/10 & $-1/6$ \\
+random & $+1/2$ & 10/10 & 10/10 & 10/10 & 10/10 & $-1/3$ \\
+equilibrium & $-1/18$ & 7/10 & 10/10 & 10/10 & 10/10 & $-1/6$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Without ever seeing \pbj's strategy, the Q-learner found the same best
+responses as hill climbing (Table~\ref{tab:stage2}). After $10^3$ hands 40 of
+50 runs were already optimal, after $10^4$ hands 49 of 50, and after $10^5$
+hands all 50. The one run still wrong at $10^4$ hands ($q = 1$) kept betting
+its Queen, the same trap that held 13.5\% of hill-climbing runs at an EV of
+$0$. Exploration makes \peter{} sometimes check a Queen anyway, so he learns
+that calling afterward pays, and the run escaped by $10^5$ hands. This is the
+coordinated change that one-variable-at-a-time hill climbing cannot make.
+Q-learning also shows the same flat directions: at $q = 1/3$ the greedy
+\code{bet\_J}, \code{bet\_K} and \code{call\_Q} differ from seed to seed,
+because their two Q-values are truly tied and only noise picks a winner
+(e.g.\ 1.161 vs.\ 1.168 for betting vs.\ checking a King in seed 0). More hands do not
+fix this: the gap is exactly zero. As a result, the worst-case EV of the
+learned policies ranges from $-1/2$ to $-1/6$, far below $-1/18$. The cost of
+dropping the model is data: about $10^4$--$10^5$ sampled hands instead of a
+few hundred exact EV evaluations.
+
+\subsection{Stage 3: learning against fixed opponents}
+
+With nothing hard-coded, the learner still reached an exact best response to
+every bot in every seed by $10^4$ hands (Table~\ref{tab:stage2}, bottom). Learning to
+exploit a bot, however, is not learning to play well. Against always-pass,
+\peter{} learns to bet his Jack and Queen (with a King, betting and checking both win) and collects the maximum $+1$ chip per hand, but
+that same policy loses $1/2$ per hand to a best counter-strategy, nine times
+worse than the equilibrium value. Even the policies trained against the
+equilibrium bot lose $1/6$ to $1/2$ against their counter-strategy. A best
+response to a fixed opponent is pure and ignores how the opponent could
+adapt, which is why stage 3 lets both players learn.
+
+\subsection{Stage 3: self-play}
+
+\begin{figure}[tb]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=0.82\linewidth, height=5.2cm,
+  xmode=log, ymode=log,
+  xlabel={Round (1 round $=$ 1{,}000 sampled hands for the sampled methods)},
+  ylabel={Exploitability (chips/hand)},
+  xmin=1, xmax=1000, ymin=0.004, ymax=0.5,
+  legend pos=south west,
+]
+\addplot[series1, thick, mark=*, mark size=1.2pt] coordinates {(1,0.12559) (2,0.08883) (5,0.05437) (10,0.05505) (20,0.04437) (50,0.04347) (100,0.04407) (200,0.04646) (500,0.04873) (1000,0.05071)};
+\addlegendentry{naive self-play}
+\addplot[series2, thick, mark=square*, mark size=1.2pt] coordinates {(1,0.30208) (2,0.20833) (5,0.11458) (10,0.08333) (20,0.08333) (50,0.06536) (100,0.03919) (200,0.04498) (500,0.04025) (1000,0.04185)};
+\addlegendentry{fictitious play, learned replies}
+\addplot[inkmuted, thick, dashed, mark=triangle*, mark size=1.4pt] coordinates {(1,0.31250) (2,0.20833) (5,0.10417) (10,0.07576) (20,0.05357) (50,0.03023) (100,0.02145) (200,0.01513) (500,0.00923) (1000,0.00616)};
+\addlegendentry{fictitious play, exact replies}
+\end{axis}
+\end{tikzpicture}
+\caption{Exploitability of the players' \emph{average} strategies (median of
+10 seeds for the sampled methods; the exact method is deterministic). The
+uniform starting pair has exploitability $0.458$; $0$ is a Nash equilibrium.}
+\label{fig:selfplay}
+\end{figure}
+
+Figure~\ref{fig:selfplay} answers our main question. Both model-free
+self-play methods cut exploitability by a factor of about ten, from $0.458$ to
+$0.044$ (naive) and $0.039$ (learned replies) chips per hand after $10^5$
+hands. Then they stop improving: ten times more hands left them at $0.051$ and
+$0.042$, with every seed between $0.035$ and $0.054$.
+The exact-reply version keeps falling steadily, to $0.006$ after 1{,}000
+rounds. Since the two fictitious-play versions differ only in how each reply
+is computed, the plateau comes from the \emph{replies}, not from too few hands.
+Each learned reply is trained for only 500 hands with $\epsilon = 0.2$, so
+some replies are wrong, and wrong replies keep entering the average at a fixed
+rate. Naive self-play has no convergence guarantee at all; its players keep
+chasing each other's latest pure policy. In every method the \emph{current}
+greedy pair stays far from equilibrium (0.17--0.42), because equilibrium play
+requires mixing, such as bluffing a Jack only some of the time, and a greedy
+policy cannot mix. Only the average strategy approaches the equilibrium.
+
+\paragraph{How many hands are enough?} For learning a best response to a fixed
+opponent, $10^4$ hands sufficed in 89 of 90 runs (stages 2 and 3) and $10^5$
+in all of them. For approaching the equilibrium, $10^5$ hands brought the
+sampled methods to their plateau, and more data alone does not help. The
+next improvement has to come from the algorithm: training each reply longer as
+rounds go on, decaying $\epsilon$, or methods such as counterfactual regret
+minimization. Compute was not the bottleneck: all $1.1\times10^8$ training
+hands of stages 2 and 3 took under two minutes on a laptop.
+
+% ===========================================================================
+\section{Conclusion}
+
+We asked how close a learning agent can get to optimal Kuhn poker, and
+answered in three stages. (1) Hill climbing on the exact EV against a fixed
+equilibrium \pbj{} reached the optimal value $-1/18$ in all 10{,}000 runs,
+but not the optimal strategy: three of four probabilities never moved.
+(2) Partial Q-learning, using only sampled chips, found the same best
+responses against five versions of \pbj{} within $10^5$ hands and escaped the
+local optimum that trapped hill climbing. (3) With both players learning only
+from their own winnings, self-play and fictitious play with Q-learned replies
+cut exploitability from $0.458$ to about $0.04$ chips per hand, while
+fictitious play with exact replies reached $0.006$. Choosing variables that
+use only what a player can see (their own card and the betting) was what made
+every stage correct.
+
+\paragraph{Limitations.} Best responses to a fixed opponent are pure and
+exploitable, however exact (stages 1--2 and the fixed-opponent runs lose
+$1/6$ to $1/2$ chip per hand to a counter-strategy). Greedy Q-learning
+policies cannot mix, so only \emph{averaged} strategies approach equilibrium,
+and with fixed-length learned replies the sampled methods plateau near $0.04$
+instead of converging. Our results also rely on a game small enough to
+evaluate exactly; exploitability cannot be computed this way for real poker.
+
+\paragraph{Extensions.} Train each fictitious-play reply longer as rounds go
+on and decay $\epsilon$, which should let the learned-reply version follow the
+exact one toward $0$; compare with counterfactual regret minimization; and move
+on to three-player Kuhn poker~\cite{wiki,szafron2013}. As the professor says:
+all models are wrong but some are useful.
+
+% ===========================================================================
+\section{Reflections \& Contributions}
+
+\paragraph{Advice for future students.} Check early that every variable in
+your model only uses information the agent can actually see; our first
+six-variable design did not, and it skewed every result. Compute exact answers
+whenever the problem is small enough, and use simulation as a check rather
+than the main tool. Finally, matching the right \emph{number} does not mean the
+model learned the right \emph{behavior}, so look at the learned parameters, not
+just the score.
+
+\paragraph{Contributions and individual reflections.}
+\begin{itemize}\itemsep2pt
+  \item \textbf{Shawn Wang:} Brainstormed ideas, did background research into kuhn poker's logic system, and created beta versions of the RL algorithm. \emph{Reflection:} I think that reverse engineering this problem was actually harder than it would have been to just start from scratch and use a brute force compute. However, I learned it was much more rewarding to understand the underlying probability logic in order to reduce compute power needed to solve the problem. On top of saving a couple magnitudes of compute power we also got to work through kuhn poker like engineers, poking around and examining probability branches to find where we could optimize.
+  \item \textbf{David Yu:} Helped with brainstorming ideas and added Q-Learning comparison to the writeup. \emph{Reflection:} I learned about poker, particularly Kuhn Poker. I also learned that some decisions have obvious answer and don't need to be learned(ie a king facing a bet should call), this shrinks the q table from 12 to 8 values.
+  \item \textbf{Kevin Pyo:} [1--2 sentences on tasks]. \emph{Reflection:} [what you learned].
+  \item \textbf{Brian Gasca:} [1--2 sentences on tasks]. \emph{Reflection:} [what you learned].
+  \item \textbf{Daniel Wu:} [1--2 sentences on tasks]. \emph{Reflection:} [what you learned].
+\end{itemize}
+
+\paragraph{Use of generative AI.} 
+% What you guys feel
+We used Claude to help draft and format this report in LaTeX and to run the additional configuration experiments in Table~\ref{tab:configs} with our own \code{logic.py} functions. We also used Claude to restructure Sections~3--5 around the three stages, and to write and run the scripts in \code{experiments/}, which only loop over seeds and settings, call our existing learners and score them with \code{evaluate.py}; the raw logs are in \code{experiments/logs/}. All modeling decisions, code and final content were reviewed and verified by the team. Additionally, all iterations of LLM generated code were based on handwritten code given as input so that the baseline logic remained the same throughout iterations.
+
+
+
+% ===========================================================================
+\section{References}
+{\renewcommand{\section}[2]{}%
+\begin{thebibliography}{9}
+\small
+\bibitem{wiki}
+``Kuhn poker,'' \emph{Wikipedia}.
+\url{https://en.wikipedia.org/wiki/Kuhn_poker}
+
+\bibitem{kuhn1950}
+H.~W. Kuhn, ``Simplified two-person poker,'' in H.~W. Kuhn and A.~W. Tucker
+(eds.), \emph{Contributions to the Theory of Games}, vol.~1, Princeton
+University Press, 1950, pp.~97--103. (Cited by~\cite{wiki}.)
+
+\bibitem{szafron2013}
+D.~Szafron, R.~Gibson, and N.~Sturtevant, ``A parameterized family of
+equilibrium profiles for three-player Kuhn poker,'' in \emph{Proc.\ 12th Int.\
+Conf.\ on Autonomous Agents and Multiagent Systems (AAMAS)}, 2013. (Cited
+by~\cite{wiki}.)
+
+\bibitem{heinrich2015}
+J.~Heinrich, M.~Lanctot, and D.~Silver, ``Fictitious self-play in
+extensive-form games,'' in \emph{Proc.\ 32nd Int.\ Conf.\ on Machine Learning
+(ICML)}, 2015, pp.~805--813.
+
+\bibitem{openspiel}
+M.~Lanctot \emph{et al.}, ``OpenSpiel: A framework for reinforcement learning
+in games,'' arXiv:1908.09453, 2019.
+\end{thebibliography}}
+
+
+\appendix
+\section{Stage 1: simulation check}
+\label{app:sim}
+
+The stage-1 log rounds probabilities to three decimals and stores only the
+simulated EV; for the analysis we recomputed each run's exact EV from the
+logged probabilities.
+
+\paragraph{Simulated hands $M$.} Repeated simulations of one equilibrium
+strategy ($\alpha = 0.2$) give an RMS error in the simulated EV of $0.039$,
+$0.013$, $0.0037$ and $0.0034$ for $M = 10^3$, $10^4$, $10^5$ and
+$2\times10^5$ hands (0.3, 3, 36 and 67\,ms per run). The error shrinks like
+$1/\sqrt{M}$, so ten times more hands buys about three times more accuracy.
 
 \begin{figure}[tb]
 \centering
@@ -422,8 +723,27 @@ its expected size, the errors follow a standard bell curve
 (Figure~\ref{fig:sim}b). The gap between simulated and exact EV is therefore
 just sampling noise.
 
-\subsection{Qualitative insights}
-\label{sec:qual}
+\section{Stage 1: learned strategies}
+\label{app:strategy}
+
+\begin{table}[htb]
+\centering
+\small
+\caption{\peter's learned probabilities over 10{,}000 runs, compared with the
+equilibrium (Eq.~\ref{eq:equilibrium}). A uniform random number has mean
+$0.5$ and SD $0.29$.}
+\label{tab:params}
+\begin{tabular}{lccl}
+\toprule
+Probability & Mean & SD & Equilibrium \\
+\midrule
+\code{bet\_J}  & 0.505 & 0.287 & $\alpha \in [0, 1/3]$ \\
+\code{bet\_Q}  & 0.000 & 0.000 & $0$ \\
+\code{bet\_K}  & 0.498 & 0.288 & $3\alpha$ \\
+\code{call\_Q} & 0.501 & 0.286 & $\alpha + 1/3$ \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \begin{figure}[tb]
 \centering
@@ -466,153 +786,5 @@ learned strategy would lose if \pbj{} switched to its best counter-strategy
 (0 for an equilibrium strategy).}
 \label{fig:strategy}
 \end{figure}
-
-\begin{table}[htb]
-\centering
-\small
-\caption{\peter's learned probabilities over 10{,}000 runs, compared with the
-equilibrium (Eq.~\ref{eq:equilibrium}). A uniform random number has mean
-$0.5$ and SD $0.29$.}
-\label{tab:params}
-\begin{tabular}{lccl}
-\toprule
-Probability & Mean & SD & Equilibrium \\
-\midrule
-\code{bet\_J}  & 0.505 & 0.287 & $\alpha \in [0, 1/3]$ \\
-\code{bet\_Q}  & 0.000 & 0.000 & $0$ \\
-\code{bet\_K}  & 0.498 & 0.288 & $3\alpha$ \\
-\code{call\_Q} & 0.501 & 0.286 & $\alpha + 1/3$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\paragraph{What the model captures.} The model captures the probabilistic
-reasoning behind the equilibrium. For example, if \peter{} checks a Queen and
-\pbj{} bets, \pbj{} holds the King $3/4$ of the time by Bayes' rule
-($P(K \mid \text{bet}) = \frac{1 \cdot 1/2}{1 \cdot 1/2 + 1/3 \cdot 1/2}$). So
-calling and folding both average $-1$ chip, which is exactly why
-\code{call\_Q} does not matter against \pbj. \pbj's bluffing rate of $1/3$ is
-chosen to make \peter{} indifferent in this way.
-
-\paragraph{What the model misses.} Only \code{bet\_Q} matched the equilibrium
-(Table~\ref{tab:params}). The other three probabilities look exactly like
-uniform random numbers. They have no effect on the EV, so the hill climber
-never accepted a change to them, and they stayed at their random starting
-values. Figure~\ref{fig:strategy}a shows that \code{bet\_J} and \code{bet\_K}
-are scattered across the whole square instead of lying on the equilibrium
-line. Only 1.3\% of runs came within $0.1$ of an equilibrium strategy for some
-$\alpha$. This matters because a real opponent would not stay fixed. If \pbj{}
-switched to its best counter-strategy, it would win an extra $0.19$ chips per
-hand on average from \peter's learned strategies (Figure~\ref{fig:strategy}b),
-more than three times the equilibrium value itself. Our proposal expected
-this when training against a fixed opponent: the learner exploits that
-opponent well but can itself be exploited.
-
-\subsection{Convergence and scalability}
-
-Training was stable. Against the optimal \pbj, every run converged, to the
-same EV, within at most 200 productive sweeps (well under the 1000-sweep cap).
-The only instability we saw was the local optimum at $q = 1$
-(Table~\ref{tab:configs}). Training is cheap: each exact EV evaluation is six
-terms. Almost all of the cost is verification. One 200{,}000-hand simulation
-takes about $0.07$\,s, so the 10{,}000-run log ($2\times10^9$ hands) took
-about 11 minutes. More data, meaning more restarts or more simulated hands,
-would shrink the simulation error but would not change the learned strategy,
-because the gap to the equilibrium comes from the objective, not from noise.
-Exact enumeration also does not scale: real poker has far too many deals and
-betting sequences to add them all up, which is where sampling and learning
-methods become necessary.
-
-\subsection{Model-free comparison: Q-learning}
-
-To test whether a learner can find the same answer without the exact EV, we trained Peter with tabular Q-learning. Peter's states are his information sets: (card, start) with actions bet/check, and (Queen, facing a bet) with actions call/fold, for 8 Q-values. All Q-values start at 0. Peter plays 200{,}000 hands per run against a fixed PB\&J with $\epsilon$-greedy exploration ($\epsilon = 0.1$) and step size $1/N(s,a)$. Each Q-value moves toward the chips won when the hand ends. After a check that PB\&J bets into, the check is scored by $\max_a Q(\text{Queen, facing bet}, a)$. We then read off the greedy policy and score it with our exact EV.
-
-\begin{table}[h]
-\centering
-\caption{Q-learning (5 seeds, 200{,}000 hands each) vs.\ hill climbing (Table~1). EV is the exact EV of the learned greedy policy.}
-\begin{tabular}{lccc}
-\toprule
-PB\&J $q$ & Hill climbing EV & Q-learning EV & Q-learning runs at best EV \\
-\midrule
-$0$       & $+1/6$             & $+1/6$  & 5/5 \\
-$0.2$     & $+1/30$            & $+1/30$ & 5/5 \\
-$1/3$     & $-1/18$            & $-1/18$ & 5/5 \\
-$0.5$     & $0$                & $0$     & 5/5 \\
-$1$       & $+1/6$ or $0$ (13.5\% stuck) & $+1/6$ & 5/5 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-Both methods reach the same best response at every $q$, so the model-based and model-free answers agree. Q-learning also shows the same flat directions: at $q = 1/3$ the learned \texttt{bet\_J}, \texttt{bet\_K} and \texttt{call\_Q} changed from seed to seed, and the Q-values for betting and checking a King were tied within noise (e.g.\ 1.166 vs.\ 1.171). Q-learning did avoid the local optimum at $q = 1$. Exploration makes Peter sometimes check a Queen, so he learns that calling afterward pays off. The value of checking then includes that call, which is the coordinated change that one-variable-at-a-time hill climbing could not make. The cost is data: Q-learning needs about 200{,}000 sampled hands per run, while hill climbing needs a few hundred exact six-term EV evaluations.
-% ===========================================================================
-\section{Conclusion}
-
-We trained \peter{} by hill climbing on the exact EV against \pbj{} playing
-the equilibrium. Every one of 10{,}000 runs reached the optimal value of
-$-1/18$, and simulations of $M = 200{,}000$ hands confirmed it to within
-ordinary sampling noise. Choosing variables per card instead of per deal was
-what made the model correct. Against non-optimal versions of \pbj, \peter{}
-learned to exploit them, which confirms that $q = 1/3$ is \pbj's optimal
-strategy.
-
-\paragraph{Limitations.} The learned strategies were not optimal. Against
-\pbj, only \code{bet\_Q} affects the EV, so \code{bet\_J}, \code{bet\_K} and
-\code{call\_Q} stayed wherever they started, and a smarter opponent could
-exploit them. Changing one variable at a time can also get stuck at local
-optima.
-
-\paragraph{Extensions.} To learn the full equilibrium, the objective has to
-account for an opponent who adapts. Possible next steps are to minimize
-exploitability directly, to let both players learn as originally proposed,
-and to move on to three-player Kuhn poker~\cite{wiki,szafron2013}. Our model
-got the right answer for the value while mostly missing the strategy behind
-it. As the professor says: all models are wrong but some are useful.
-
-% ===========================================================================
-\section{Reflections \& Contributions}
-
-\paragraph{Advice for future students.} Check early that every variable in
-your model only uses information the agent can actually see; our first
-six-variable design did not, and it skewed every result. Compute exact answers
-whenever the problem is small enough, and use simulation as a check rather
-than the main tool. Finally, matching the right \emph{number} does not mean the
-model learned the right \emph{behavior}, so look at the learned parameters, not
-just the score.
-
-\paragraph{Contributions and individual reflections.}
-\begin{itemize}\itemsep2pt
-  \item \textbf{Shawn Wang:} Brainstormed ideas, did background research into kuhn poker's logic system, and created beta versions of the RL algorithm. \emph{Reflection:} I think that reverse engineering this problem was actually harder than it would have been to just start from scratch and use a brute force compute. However, I learned it was much more rewarding to understand the underlying probability logic in order to reduce compute power needed to solve the problem. On top of saving a couple magnitudes of compute power we also got to work through kuhn poker like engineers, poking around and examining probability branches to find where we could optimize.
-  \item \textbf{David Yu:} Helped with brainstorming ideas and added Q-Learning comparison to the writeup. \emph{Reflection:} I learned about poker, particularly Kuhn Poker. I also learned that some decisions have obvious answer and don't need to be learned(ie a king facing a bet should call), this shrinks the q table from 12 to 8 values.
-  \item \textbf{Kevin Pyo:} [1--2 sentences on tasks]. \emph{Reflection:} [what you learned].
-  \item \textbf{Brian Gasca:} [1--2 sentences on tasks]. \emph{Reflection:} [what you learned].
-  \item \textbf{Daniel Wu:} [1--2 sentences on tasks]. \emph{Reflection:} [what you learned].
-\end{itemize}
-
-\paragraph{Use of generative AI.} 
-% What you guys feel
-We used Claude to help draft and format this report in LaTeX and to run the additional configuration experiments in Table~\ref{tab:configs} with our own \code{logic.py} functions. All modeling decisions, code and final content were reviewed and verified by the team. Additionally, all iterations of LLM generated code were based on handwritten code given as input so that the baseline logic remained the same throughout iterations.
-
-
-
-% ===========================================================================
-\section{References}
-{\renewcommand{\section}[2]{}%
-\begin{thebibliography}{9}
-\small
-\bibitem{wiki}
-``Kuhn poker,'' \emph{Wikipedia}.
-\url{https://en.wikipedia.org/wiki/Kuhn_poker}
-
-\bibitem{kuhn1950}
-H.~W. Kuhn, ``Simplified two-person poker,'' in H.~W. Kuhn and A.~W. Tucker
-(eds.), \emph{Contributions to the Theory of Games}, vol.~1, Princeton
-University Press, 1950, pp.~97--103. (Cited by~\cite{wiki}.)
-
-\bibitem{szafron2013}
-D.~Szafron, R.~Gibson, and N.~Sturtevant, ``A parameterized family of
-equilibrium profiles for three-player Kuhn poker,'' in \emph{Proc.\ 12th Int.\
-Conf.\ on Autonomous Agents and Multiagent Systems (AAMAS)}, 2013. (Cited
-by~\cite{wiki}.)
-\end{thebibliography}}
 
 \end{document}
