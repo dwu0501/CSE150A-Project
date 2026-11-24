@@ -1,4 +1,5 @@
 import random
+from pathlib import Path
 
 # Card ranks
 J, Q, K = 0, 1, 2
@@ -96,7 +97,7 @@ def hill_climb(params, ev_fn=expected_payoff, lr=0.005, max_sweeps=1000):
 
 def main():
     # Random starting strategy, then hill_climb to a best response
-    file = open('log.txt', 'w')
+    file = open(Path(__file__).resolve().parent / 'logs' / 'log.txt', 'w')
     file.write("exact EV :" + str(round(-1/18, 5))+ '\n' + '\n')
     
     # runs 10k times main and logs it into log.txt

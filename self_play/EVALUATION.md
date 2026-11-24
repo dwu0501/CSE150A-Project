@@ -40,32 +40,32 @@ Averaging reduced final exploitability for both sampled methods. Their five-seed
 - **Comparison learner (`q_learning.py`):** P1 observes its own card and betting history. Six information sets × two legal actions; all Q-values start at zero. Training uses ε-greedy exploration (ε = 0.2), discount 1, a step size of 1/visits and terminal net chips; an intermediate check-bet bootstraps from the next state. Evaluation freezes the greedy policy and splits exact ties equally.
 - **Naïve (`self_play.py`):** both seats have their own Q-table. They act with exploration against each other's current learner, then update from the same hand with opposite terminal rewards. Save current greedy policies every 1,000 hands and also evaluate the mixture of the pre-hand greedy policies, without exploration.
 - **Fictitious, learned:** start each average with one uniform policy. Freeze *both* averages at the start of each round. Train a fresh Q-table per seat for 500 hands against the other seat's frozen average; add both new greedy replies simultaneously with equal historical weight. One round therefore spends 1,000 sampled hands, not 1,000 per seat.
-- **Fictitious, exact:** same initialization and averaging rule, but compute each best reply exactly using `evaluate.py`. No sampled hands or exploration. For both versions the average represents mixing complete policies: P1's call frequency after checking a given card is weighted by how often each historical policy would have checked that card. Method reference: Heinrich, Lanctot & Silver, *Fictitious Self-Play in Extensive-Form Games* (ICML 2015).
+- **Fictitious, exact:** same initialization and averaging rule, but compute each best reply exactly using `common/evaluate.py`. No sampled hands or exploration. For both versions the average represents mixing complete policies: P1's call frequency after checking a given card is weighted by how often each historical policy would have checked that card. Method reference: Heinrich, Lanctot & Silver, *Fictitious Self-Play in Extensive-Form Games* (ICML 2015).
 
 ## Reproduce
 
-From the repo root, use Python 3.10+ in a virtual environment. Training and JSON export use only the standard library. Matplotlib is needed only to redraw the figures; OpenSpiel is an optional independent test.
+From the repo root (not this folder), use Python 3.10+ in a virtual environment. Training and JSON export use only the standard library. Matplotlib is needed only to redraw the figures; OpenSpiel is an optional independent test.
 
 ```sh
 python -m pip install matplotlib==3.10.6   # omit for --data-only
-python fixed_curve.py                    # results/fixed.{json,png}
-python self_curve.py                     # results/selfplay.{json,png}
+python -m self_play.fixed_curve          # self_play/results/fixed.{json,png}
+python -m self_play.self_curve           # self_play/results/selfplay.{json,png}
 # Independent runs or other budgets (use --out to keep the checked-in results)
-python self_curve.py --rounds 10 --batch 200 --seeds 0 1 --data-only --out my-results
-python q_learning.py --opponent random --episodes 100000 --seeds 0
-python q_learning.py --opponent all --episodes 100000 --epsilon 0.2 --seeds 0 1 2 3 4
-python -m unittest discover -s tests -v
+python -m self_play.self_curve --rounds 10 --batch 200 --seeds 0 1 --data-only --out my-results
+python -m self_play.q_learning --opponent random --episodes 100000 --seeds 0
+python -m self_play.q_learning --opponent all --episodes 100000 --epsilon 0.2 --seeds 0 1 2 3 4
+python -m unittest discover -t . -s self_play -v
 # For the independent cross-check, install open-spiel==2.0.2 and rerun the suite.
 ```
 
 ## Scoring a policy and checking the hill-climbing baseline
 
-`beta_logic.py` preserves the original **hill-climbing baseline**. It adjusts four P1 probabilities in steps of 0.005 against a fixed equilibrium P2. Its simulation sanity-checks its expected payoff; agreement with −1/18 against that opponent is **not** an equilibrium test. The first logged policy scores **−0.05556** against that P2 but **−0.18833** against its strongest counter. Across 10,000 rounded logged policies the median worst-case payoff is **−0.23733**. Keep the simulator and logs as a comparison, not a success criterion.
+`hill_climbing/hill_climbing.py` preserves the original **hill-climbing baseline**. It adjusts four P1 probabilities in steps of 0.005 against a fixed equilibrium P2. Its simulation sanity-checks its expected payoff; agreement with −1/18 against that opponent is **not** an equilibrium test. The first logged policy scores **−0.05556** against that P2 but **−0.18833** against its strongest counter. Across 10,000 rounded logged policies the median worst-case payoff is **−0.23733**. Keep the simulator and logs as a comparison, not a success criterion.
 
 ```sh
-python evaluate.py policy --p1 .406 0 .740 .341
-python evaluate.py policy --p1 .406 0 .740 .341 --p2 .5 .5 .5 .5 .5 .5
-git show origin/run_log:log.txt | python evaluate.py log -  # git fetch origin first if needed
+python -m common.evaluate policy --p1 .406 0 .740 .341
+python -m common.evaluate policy --p1 .406 0 .740 .341 --p2 .5 .5 .5 .5 .5 .5
+python -m common.evaluate log hill_climbing/logs/log.txt
 ```
 
 Policies have six probabilities per seat: bets with J/Q/K then calls with J/Q/K. P1 bets when opening and calls after check-bet; P2 bets after a check and calls against an opening bet. The four-number legacy P1 format is also accepted. A best reply sees its own card and public actions, never the hidden deal. Tests check both replies against all 64 deterministic strategies per seat and compare scores with OpenSpiel.

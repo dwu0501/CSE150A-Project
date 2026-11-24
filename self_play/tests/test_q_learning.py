@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from evaluate import DEALS, evaluate
-from q_learning import OPPONENTS, experiment, greedy_policy, step, td_update, train
+from common.evaluate import DEALS, evaluate
+from self_play.q_learning import OPPONENTS, experiment, greedy_policy, step, td_update, train
 
 
 class QLearningTest(unittest.TestCase):
@@ -73,9 +73,9 @@ class QLearningTest(unittest.TestCase):
                 train(p2, episodes=1)
 
     def test_cli_outputs_one_row_per_opponent_and_seed(self):
-        cli = Path(__file__).resolve().parents[1] / 'q_learning.py'
-        result = subprocess.run([sys.executable, str(cli), '--opponent', 'all', '--episodes', '200',
-                                 '--seeds', '0', '1'], capture_output=True, text=True, check=True)
+        root = Path(__file__).resolve().parents[2]
+        result = subprocess.run([sys.executable, '-m', 'self_play.q_learning', '--opponent', 'all', '--episodes', '200',
+                                 '--seeds', '0', '1'], capture_output=True, text=True, check=True, cwd=root)
         data = json.loads(result.stdout)
         self.assertEqual(data['episodes_per_run'], 200)
         self.assertEqual([(r['opponent'], r['seed']) for r in data['runs']],
