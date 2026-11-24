@@ -1,37 +1,34 @@
-# Project Specifications
-## Terminology
-1. The "perfect" player (PB&J) plays Player 2's fixed equilibrium strategy, controlled by a single value `q` (default 1/3)
-2. The "training" player (Peter) is Player 1 and is given four probabilities to converge on: `bet_J`, `bet_Q`, `bet_K` (chance of betting with each card) and `call_Q` (chance of calling a bet after checking with Q)
-3. The check probabilities are just the complements, e.g. check with `J = 1 - bet_J`. The `1-alpha` and `alpha` branches in the game tree are probabilities we converge on
-4. Learning rate `lr` is the step size of each hill climbing move. Currently `0.005`
+# Learning to play Kuhn poker
 
-## Axioms
-1. Peter is always the first player
-2. Peter only sees his own card, so his strategy depends only on that card
-3. Alpha is a range of optimal values
+The class project studies two-player Kuhn poker. The original checklist is complete; the three-player experiment below is a separate extension. Run the commands from the repository root on `main`. The team's LaTeX draft is on the `Writeup` branch.
 
-## Process
-1. Start Peter's four probabilities at random values in `[0,1]`
-2. Calculate Peter's exact EV per hand in place of an MSE
-3. Shift each probability by `+lr` or `-lr` and keep a change only if it strictly improves EV
-4. Keep sweeping 2,3 until no change improves EV OR the max number of sweeps is hit
-5. Run a simulation of `M` hands with the converged probabilities as a sanity check on the exact EV
-6. Compare exact EV and simulated EV to the equilibrium value of `-1/18`
+## Two-player results
 
-## Operator Instructions
-1. **ALWAYS PULL THE LATEST VERSION OF THE REPO BEFORE RUNNING**
-2. Run `logic.py`. It prints `bet_J`, `bet_Q`, `bet_K`, `call_Q`, the exact EV, and the simulated EV
-3. If exact EV is `~-1/18`, log the probabilities and EV/(-1/18) in `log.md`, along with the starting values it began from
-4. If exact EV is not `~-1/18`, log the probabilities and EV in `log.md`, then rerun from a new random start
-5. **MAKE SURE TO PUSH YOUR `log.md` AND PROBABILITIES ONTO THE REPO**
+| Original task | Result |
+| --- | --- |
+| Choose the simulation size and hill-climbing step | `M = 200,000` simulated hands per final policy; `lr = 0.005` per hill-climbing move. This is not the Q-learning step size. |
+| Run from multiple random starts | The [run log](https://github.com/dwu0501/CSE150A-Project/blob/run_log/log.txt) records 10,000 final policies. In the rounded log `bet_Q` was always zero; `bet_J`, `bet_K`, and `call_Q` each ranged from 0 to 1. |
+| Compare the policies with equilibrium | The equilibrium family requires `bet_J = α`, `bet_K = 3α`, `call_Q = α + 1/3`, `bet_Q = 0` for `0 ≤ α ≤ 1/3`. The first logged policy `(0.406, 0, 0.740, 0.341)` does not satisfy those relations. As Player 1 it earns −0.05556 chips/hand against the fixed equilibrium bot, but −0.18833 against its best counter. Matching the game value against one opponent is not proof of equilibrium. |
 
-## TO DO
-1. Determine `M` and the final learning rate `lr`
-2. Run multiple random starts to see which probabilities we converge to
-3. Compare the converged probabilities to the known equilibrium:
-    * `bet_J = alpha`
-    * `bet_K = 3*alpha`
-    * `call_Q = alpha + 1/3`
-    * `bet_Q = 0`
+To reproduce the original hill climber, run `python beta_logic.py`. For Brian's fixed-opponent Q-learning experiment, run `python logic.py`. The [evaluation guide](https://github.com/dwu0501/CSE150A-Project/blob/main/EVALUATION.md) covers exact best responses, the comparison learning curves, and two-player self-play. No manual log uploads are needed.
 
-**99999**. 3 man Kuhn Poker
+## Three-player extension
+
+[`three_player.py`](https://github.com/dwu0501/CSE150A-Project/blob/main/three_player.py) runs OpenSpiel's four-card, three-seat Kuhn game: each player antes one chip and gets one private card, one card stays out, and there is one betting round with no raises. All three seats learn by counterfactual regret minimization (CFR). This uses OpenSpiel's game and solver, not the two-player Q-learner.
+
+```sh
+python -m pip install open-spiel==2.0.2
+python three_player.py > three_player_run.json
+python -m unittest discover -s tests -p test_three_player.py -v
+```
+
+| Full-tree CFR iterations | NashConv (chips/hand) |
+| ---: | ---: |
+| 0 (uniform actions) | 2.062500 |
+| 10 | 0.312481 |
+| 100 | 0.037016 |
+| 1,000 | 0.003922 |
+
+At each checkpoint we freeze the average strategies, let each seat switch to its best response while the other two stay fixed, and sum the three possible gains (NashConv). At 1,000 iterations the largest single-seat gain was about 0.00152 chips/hand. This measures how close this profile came to equilibrium; it does not establish an exact equilibrium. One iteration is a full game-tree update, not one sampled hand.
+
+[Saved checkpoints and final strategy](https://github.com/dwu0501/CSE150A-Project/blob/main/results/three_player.json) include the three expected payoffs, each seat's deviation gain, and action probabilities at all 48 decision information sets of the final average profile. To change the budget, e.g. run `python three_player.py --checkpoints 0 50 500`.
