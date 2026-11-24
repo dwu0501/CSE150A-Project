@@ -581,7 +581,7 @@ just the score.
 
 \paragraph{Contributions and individual reflections.}
 \begin{itemize}\itemsep2pt
-  \item \textbf{Shawn Wang:} [1--2 sentences on tasks]. \emph{Reflection:} [what you learned].
+  \item \textbf{Shawn Wang:} Brainstormed ideas, did background research into kuhn poker's logic system, and created beta versions of the RL algorithm. \emph{Reflection:} I think that reverse engineering this problem was actually harder than it would have been to just start from scratch and use a brute force compute. However, I learned it was much more rewarding to understand the underlying probability logic in order to reduce compute power needed to solve the problem. On top of saving a couple magnitudes of compute power we also got to work through kuhn poker like engineers, poking around and examining probability branches to find where we could optimize.
   \item \textbf{David Yu:} Helped with brainstorming ideas and added Q-Learning comparison to the writeup. \emph{Reflection:} I learned about poker, particularly Kuhn Poker. I also learned that some decisions have obvious answer and don't need to be learned(ie a king facing a bet should call), this shrinks the q table from 12 to 8 values.
   \item \textbf{Kevin Pyo:} [1--2 sentences on tasks]. \emph{Reflection:} [what you learned].
   \item \textbf{Brian Gasca:} [1--2 sentences on tasks]. \emph{Reflection:} [what you learned].
@@ -590,7 +590,8 @@ just the score.
 
 \paragraph{Use of generative AI.} 
 % What you guys feel
-% We used Claude to help draft and format this report in LaTeX and to run the additional configuration experiments in Table~\ref{tab:configs} with our own \code{logic.py} functions. All modeling decisions, code and final content were reviewed and verified by the team.
+We used Claude to help draft and format this report in LaTeX and to run the additional configuration experiments in Table~\ref{tab:configs} with our own \code{logic.py} functions. All modeling decisions, code and final content were reviewed and verified by the team. Additionally, all iterations of LLM generated code were based on handwritten code given as input so that the baseline logic remained the same throughout iterations.
+
 
 
 % ===========================================================================
